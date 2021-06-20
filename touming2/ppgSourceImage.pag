@@ -1,0 +1,587 @@
+VERSION 5.00
+Begin VB.PropertyPage ppgSourceImage 
+   Caption         =   "Image Source"
+   ClientHeight    =   4155
+   ClientLeft      =   0
+   ClientTop       =   0
+   ClientWidth     =   4740
+   OLEDropMode     =   1  'Manual
+   PaletteMode     =   0  'Halftone
+   ScaleHeight     =   4155
+   ScaleWidth      =   4740
+   Begin VB.ComboBox cboIcon 
+      BeginProperty Font 
+         Name            =   "Arial"
+         Size            =   8.25
+         Charset         =   0
+         Weight          =   400
+         Underline       =   0   'False
+         Italic          =   0   'False
+         Strikethrough   =   0   'False
+      EndProperty
+      Height          =   330
+      Left            =   120
+      Style           =   2  'Dropdown List
+      TabIndex        =   3
+      Top             =   3120
+      Visible         =   0   'False
+      Width           =   2955
+   End
+   Begin VB.CommandButton cmdClipBoard 
+      Caption         =   "´Ó¼ôÇÐ°å"
+      Height          =   480
+      Left            =   3090
+      TabIndex        =   1
+      Top             =   1500
+      Width           =   1605
+   End
+   Begin VB.CommandButton Command1 
+      Caption         =   "Çå³ýÍ¼Æ¬"
+      Height          =   480
+      Left            =   3090
+      TabIndex        =   2
+      Top             =   2100
+      Width           =   1605
+   End
+   Begin VB.CommandButton cmdBrowse 
+      Caption         =   "ä¯ÀÀ"
+      Height          =   480
+      Left            =   3090
+      TabIndex        =   0
+      Top             =   915
+      Width           =   1605
+   End
+   Begin ¹¤³Ì1.aicAlphaImage ucAlphaImage1 
+      Height          =   1215
+      Left            =   600
+      Top             =   840
+      Width           =   1935
+      _ExtentX        =   3413
+      _ExtentY        =   2143
+      Image           =   "ppgSourceImage.pgx":0000
+   End
+   Begin VB.Label lblFormat 
+      Height          =   345
+      Left            =   165
+      TabIndex        =   4
+      Top             =   3120
+      Width           =   4605
+   End
+   Begin VB.Shape Shape1 
+      Height          =   2880
+      Left            =   150
+      Top             =   120
+      Width           =   2880
+   End
+End
+Attribute VB_Name = "ppgSourceImage"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = False
+Attribute VB_Exposed = False
+
+
+Option Explicit
+
+Private Declare Sub CopyMemory Lib "kernel32.dll" Alias "RtlMoveMemory" (ByRef Destination As Any, ByRef Source As Any, ByVal Length As Long)
+
+
+Private Type OPENFILENAME
+     lStructSize As Long
+     hwndOwner As Long
+     hInstance As Long
+     lpstrFilter As String
+     lpstrCustomFilter As String
+     nMaxCustFilter As Long
+     nFilterIndex As Long
+     lpstrFile As String
+     nMaxFile As Long
+     lpstrFileTitle As String
+     nMaxFileTitle As Long
+     lpstrInitialDir As String
+     lpstrTitle As String
+     Flags As Long
+     nFileOffset As Integer
+     nFileExtension As Integer
+     lpstrDefExt As String
+     lCustData As Long
+     lpfnHook As Long
+     lpTemplateName As String
+
+End Type
+Private Declare Function GetOpenFileNameW Lib "comdlg32.dll" (pOpenfilename As OPENFILENAME) As Long
+Private Declare Function GetOpenFileName Lib "comdlg32.dll" Alias "GetOpenFileNameA" (pOpenfilename As OPENFILENAME) As Long
+Private Declare Function GetDesktopWindow Lib "USER32.DLL" () As Long
+Private Declare Function IsWindowUnicode Lib "USER32.DLL" (ByVal hWnd As Long) As Long
+Private Declare Function lstrlenW Lib "kernel32.dll" (lpString As Any) As Long
+Private Declare Function lstrlen Lib "kernel32.dll" Alias "lstrlenA" (ByVal lpString As String) As Long
+Private Const OFN_DONTADDTORECENT As Long = &H2000000
+Private Const OFN_ENABLESIZING As Long = &H800000
+Private Const OFN_EXPLORER As Long = &H80000
+Private Const OFN_FILEMUSTEXIST As Long = &H1000
+Private Const OFN_LONGNAMES As Long = &H200000
+Private Const OFN_CREATEPROMPT As Long = &H2000
+Private Const OFN_EXTENSIONDIFFERENT As Long = &H400
+Private Const OFN_OVERWRITEPROMPT As Long = &H2
+Private Const OFN_NOCHANGEDIR As Long = &H8
+Private sOFNprevPath As String
+
+' ////////////////////////////////////////////////////////////////
+' Unicode-capable Pasting of file names with wide characters
+' ////////////////////////////////////////////////////////////////
+Private Declare Function DragQueryFile Lib "shell32.dll" Alias "DragQueryFileA" (ByVal hDrop As Long, ByVal UINT As Long, ByVal lpStr As String, ByVal ch As Long) As Long
+Private Declare Function OpenClipboard Lib "USER32.DLL" (ByVal hWnd As Long) As Long
+Private Declare Function GetClipboardData Lib "USER32.DLL" (ByVal wFormat As Long) As Long
+Private Declare Function CloseClipboard Lib "USER32.DLL" () As Long
+' ////////////////////////////////////////////////////////////////
+
+' ////////////////////////////////////////////////////////////////
+' Unicode-capable Drag and Drop of file names with wide characters
+' ////////////////////////////////////////////////////////////////
+Private Declare Function DispCallFunc Lib "oleaut32" (ByVal pvInstance As Long, _
+    ByVal offsetinVft As Long, ByVal CallConv As Long, ByVal retTYP As VbVarType, _
+    ByVal paCNT As Long, ByRef paTypes As Integer, _
+    ByRef paValues As Long, ByRef retVAR As Variant) As Long
+Private Declare Function GlobalFree Lib "kernel32.dll" (ByVal hMem As Long) As Long
+
+Private Type FORMATETC
+    cfFormat As Long
+    pDVTARGETDEVICE As Long
+    dwAspect As Long
+    lIndex As Long
+    TYMED As Long
+End Type
+
+Private Type DROPFILES
+    pFiles As Long
+    ptX As Long
+    ptY As Long
+    fNC As Long
+    fWide As Long
+End Type
+
+Private Type STGMEDIUM
+    TYMED As Long
+    Data As Long
+    pUnkForRelease As IUnknown
+End Type
+
+Private oUC As aicAlphaImage
+
+Private Sub cboIcon_Click()
+
+    Dim tAIC As aicAlphaImage
+    Dim srcData() As Byte
+    Dim cX As Long, cY As Long, cBD As Long
+   
+    Set tAIC = ucAlphaImage1
+    tAIC.ppgGetStream srcData
+    Set tAIC = Nothing
+    
+    ResetSample
+    GetIconSize cX, cY, cBD
+    ucAlphaImage1.LoadImage_FromArray srcData(), cX, cY, cBD
+    SizeDisplay
+    PropertyPage.Changed = True
+    
+End Sub
+
+Private Sub cmdBrowse_Click()
+    
+    Dim sFilename As String
+    
+    sFilename = GetFileName
+    If Not sFilename = vbNullString Then
+        ResetSample
+        Refresh
+        If ucAlphaImage1.LoadImage_FromFile(sFilename, ScaleX(ucAlphaImage1.Width, ScaleMode, vbPixels), ScaleY(ucAlphaImage1.Height, ScaleMode, vbPixels)) Then
+            If LoadIconSizes() = False Then SizeDisplay
+        End If
+        PropertyPage.Changed = True
+    End If
+End Sub
+
+Private Sub cmdClipBoard_Click()
+    
+    On Error Resume Next
+    If Clipboard.GetData(vbCFBitmap) = True Or Clipboard.GetData(vbCFDIB) = True Or _
+        Clipboard.GetData(vbCFEMetafile) = True Or Clipboard.GetData(vbCFMetafile) = True Then
+        
+        ResetSample
+        If ucAlphaImage1.LoadImage_FromClipboard() = True Then
+            SizeDisplay
+            PropertyPage.Changed = True
+        End If
+    Else
+        
+        Dim sFiles() As String
+        If GetPastedFiles(sFiles) > 0 Then
+            ResetSample
+            Refresh
+            If ucAlphaImage1.LoadImage_FromFile(sFiles(1), ScaleX(ucAlphaImage1.Width, ScaleMode, vbPixels), ScaleY(ucAlphaImage1.Height, ScaleMode, vbPixels)) Then
+                If LoadIconSizes() = False Then SizeDisplay
+            End If
+            PropertyPage.Changed = True
+        End If
+    
+    End If
+
+End Sub
+
+Private Sub Command1_Click()
+    ResetSample
+    PropertyPage.Changed = True
+End Sub
+
+Private Sub PropertyPage_ApplyChanges()
+    
+    Dim srcData() As Byte
+    Dim tOBJ As aicAlphaImage
+    Dim cX As Long, cY As Long, cBD As Long
+    
+    Set tOBJ = ucAlphaImage1
+    If tOBJ.ppgGetStream(srcData) = True Then
+        GetIconSize cX, cY, cBD
+        oUC.ppgSetStream srcData, cX, cY, cBD
+    Else
+        oUC.ClearImage
+    End If
+        
+End Sub
+
+Private Sub PropertyPage_Initialize()
+    ucAlphaImage1.KeepOriginalFormat = True
+End Sub
+
+Private Sub PropertyPage_OLEDragDrop(Data As DataObject, Effect As Long, Button As Integer, Shift As Integer, X As Single, Y As Single)
+    If Data.Files.Count Then
+        GetDroppedFiles Data
+        ResetSample
+        Refresh
+        If ucAlphaImage1.LoadImage_FromFile(Data.Files(1), ScaleX(ucAlphaImage1.Width, ScaleMode, vbPixels), ScaleY(ucAlphaImage1.Height, ScaleMode, vbPixels)) Then
+            If LoadIconSizes() = False Then SizeDisplay
+        End If
+        PropertyPage.Changed = True
+    End If
+End Sub
+
+Private Sub PropertyPage_SelectionChanged()
+    If SelectedControls.Count = 0 Then
+        Set oUC = Nothing
+        PropertyPage.Changed = False
+    Else
+        Dim srcData() As Byte
+        ResetSample
+        Set oUC = SelectedControls(0)
+        If oUC.ppgGetStream(srcData) = True Then
+            ucAlphaImage1.LoadImage_FromArray srcData, ScaleX(ucAlphaImage1.Width, ScaleMode, vbPixels), ScaleY(ucAlphaImage1.Height, ScaleMode, vbPixels)
+            If LoadIconSizes = False Then SizeDisplay
+        Else
+            ucAlphaImage1.ClearImage
+        End If
+        PropertyPage.Changed = False
+    End If
+End Sub
+
+
+Private Function GetFileName() As String
+    
+    ' using API version vs commondialog enables Unicode filenames to be passed to c32bppDIB classes
+    Dim ofn As OPENFILENAME
+    Dim rtn As Long
+    Dim bUnicode As Boolean
+    
+    With ofn
+        .lStructSize = Len(ofn)
+        .hwndOwner = PropertyPage.hWnd
+        .hInstance = App.hInstance
+        .lpstrFilter = "Image Files" & Chr$(0) & "*gif;*.bmp;*.jpg;*.jpeg;*.ico;*.cur;*.wmf;*.emf;*.png"
+        If ucAlphaImage1.GDIplusEnabled = True Then
+            .lpstrFilter = .lpstrFilter & ";*.tiff"
+        End If
+        .lpstrFilter = .lpstrFilter & Chr$(0) & "Bitmaps" & Chr$(0) & "*.bmp" & Chr$(0) & "GIFs" & Chr$(0) & "*.gif" & Chr$(0) & "Icons and Cursors" & Chr$(0) & "*.ico;*.cur" & Chr$(0) & "JPGs" & Chr$(0) & "*.jpg;*.jpeg" & Chr$(0) & "Meta Files" & Chr$(0) & "*.wmf;*.emf" & Chr$(0) & "PNGs" & Chr$(0) & "*.png" & Chr$(0)
+        If ucAlphaImage1.GDIplusEnabled = True Then
+            .lpstrFilter = .lpstrFilter & "Tiff" & Chr$(0) & "*.tiff" & Chr$(0)
+        End If
+        .lpstrFilter = ofn.lpstrFilter & "All Files" & Chr$(0) & "*.*" & Chr$(0)
+        .lpstrDefExt = vbNullString
+        .lpstrFile = String$(256, 0)
+        .nMaxFile = 256
+        .nMaxFileTitle = 256
+        .lpstrTitle = "Select Image"
+        .lpstrInitialDir = vbNullString
+        .Flags = OFN_LONGNAMES Or OFN_EXPLORER Or OFN_ENABLESIZING Or OFN_DONTADDTORECENT _
+                Or OFN_FILEMUSTEXIST
+    
+        bUnicode = Not (IsWindowUnicode(GetDesktopWindow) = 0&)
+        If bUnicode Then
+            .lpstrInitialDir = StrConv(.lpstrInitialDir, vbUnicode)
+            .lpstrFile = StrConv(.lpstrFile, vbUnicode)
+            .lpstrFilter = StrConv(.lpstrFilter, vbUnicode)
+            .lpstrTitle = StrConv(.lpstrTitle, vbUnicode)
+        End If
+        .lpstrFileTitle = .lpstrFile
+    End With
+    
+    If bUnicode Then
+        rtn = GetOpenFileNameW(ofn)
+        If rtn > 0& Then
+            If bUnicode Then
+                rtn = lstrlenW(ByVal ofn.lpstrFile)
+                GetFileName = StrConv(Left$(ofn.lpstrFile, rtn * 2), vbFromUnicode)
+            End If
+        End If
+    Else
+        rtn = GetOpenFileName(ofn)
+        If rtn > 0& Then
+            rtn = lstrlen(ofn.lpstrFile)
+            GetFileName = Left$(ofn.lpstrFile, rtn)
+        End If
+    End If
+
+ExitRoutine:
+End Function
+
+Private Sub SizeDisplay()
+
+    Dim cX As Long, cY As Long
+    
+    ucAlphaImage1.GetImageScales cX, cY, aiScaleDownOnly, ScaleX(Shape1.Width, ScaleMode, vbPixels) - 2, ScaleY(Shape1.Height, ScaleMode, vbPixels) - 2
+    
+    cX = ScaleX(cX, vbPixels, ScaleMode)
+    cY = ScaleY(cY, vbPixels, ScaleMode)
+    ucAlphaImage1.Move (Shape1.Width - cX) \ 2 + Shape1.Left, _
+                (Shape1.Height - cY) \ 2 + Shape1.Top, cX, cY
+    ucAlphaImage1.Visible = True
+
+End Sub
+
+Private Sub ResetSample()
+    ucAlphaImage1.Visible = False
+    ucAlphaImage1.ClearImage
+End Sub
+
+Private Sub GetIconSize(cX As Long, cY As Long, bitDepth As Long)
+
+
+    If cboIcon.Visible = True Then
+        cX = Val(Left$(cboIcon.Text, 3))
+        cY = Val(Mid$(cboIcon.Text, 5, 3))
+        bitDepth = Val(Mid$(cboIcon.Text, InStr(cboIcon.Text, "{") + 1, 3))
+    End If
+    
+End Sub
+
+Private Function LoadIconSizes() As Boolean
+
+    Dim tAIC As aicAlphaImage
+    Dim icoSizes() As Long
+    Dim X As Long, i As Long
+    Dim tDIB As c32bppDIB, sItem As String, sOrder As Long
+    
+    Set tAIC = ucAlphaImage1
+    Set tDIB = tAIC.ppgDIBclass
+    If tDIB.SourceIconSizes(icoSizes) = 0 Then
+        sItem = tDIB.Width & " x " & tDIB.Height & " - "
+        Select Case tDIB.ImageType
+            Case imgBitmap: sItem = sItem & "Bitmap or JPG file"
+            Case imgBmpARGB, imgBmpPARGB: sItem = sItem & "Alpha Bitmap"
+            Case imgEMF, imgWMF: sItem = sItem & "Windows Meta File"
+            Case imgGIF
+                If tDIB.Alpha = True Then
+                    sItem = sItem & "Transparent GIF"
+                Else
+                    sItem = sItem & "GIF file"
+                End If
+            Case imgPNG: sItem = sItem & "PNG file"
+            Case Else
+        End Select
+        lblFormat.Caption = sItem
+        cboIcon.Visible = False
+        cboIcon.Clear
+        lblFormat.Visible = True
+    Else
+        lblFormat.Visible = False
+        cboIcon.Clear
+        For X = 0 To UBound(icoSizes, 2)
+            sItem = Format(icoSizes(0, X), "000") & "x" & Format(icoSizes(1, X), "000")
+            sItem = sItem & " {" & icoSizes(2, X) & " bit, "
+            Select Case icoSizes(3, X)
+                Case TRUE_COLOR
+                    sItem = sItem & "True Color}"
+                Case HIGH_COLOR
+                    sItem = sItem & "High Color}"
+                Case TRUE_COLOR_ALPHA
+                    sItem = sItem & "True Color Alpha}"
+                Case Else
+                    sItem = sItem & icoSizes(3, X) & " colors}"
+            End Select
+            sOrder = icoSizes(0, X) * icoSizes(1, X) + icoSizes(2, X)
+            For i = 0 To cboIcon.ListCount - 1
+                If sOrder < cboIcon.ItemData(i) Then Exit For
+            Next
+            cboIcon.AddItem sItem, i
+            cboIcon.ItemData(i) = sOrder
+        Next
+        cboIcon.Visible = True
+    End If
+    Set tDIB = Nothing
+    Set tAIC = Nothing
+    If cboIcon.ListCount > 0 Then
+        cboIcon.ListIndex = cboIcon.ListCount - 1
+        cboIcon.Enabled = (cboIcon.ListCount > 1)
+    End If
+    LoadIconSizes = (cboIcon.ListCount > 0)
+End Function
+
+Private Function GetPastedFiles(ListOfFiles() As String) As Long
+
+    ' SPECIAL NOTES:
+    ' 1. The DragQueryFileW API can be used to get the unicode filename instead of
+    '    parsing the hDrop object like we are going to do here.
+    ' 2. However, when do you use DragQueryW or DragQueryA?  The answer is
+    '    probably when in NT use W else use A versions.
+    ' 3. This method doesn't care which operating system is used and is therefore generic
+    
+    Dim hDrop As Long
+    Dim sFile As String
+    Dim lLen As Long
+    Dim iCount As Long
+    Dim dFiles As DROPFILES
+
+   ' Get handle to CF_HDROP if any:
+   If OpenClipboard(0&) = 0 Then Exit Function
+        
+    hDrop = GetClipboardData(vbCFFiles)
+    If Not hDrop = 0 Then   ' then copied/cut files exist in memory
+        iCount = DragQueryFile(hDrop, -1&, vbNullString, 0)
+        ' the hDrop is a pointer to a DROPFILES structure
+        ' copy the 20-byte structure for our use
+        CopyMemory dFiles, ByVal hDrop, 20&
+        ' use the pFiles member to track offsets for file names
+        dFiles.pFiles = dFiles.pFiles + hDrop
+    
+        ReDim ListOfFiles(1 To iCount)
+    
+        For iCount = 1 To iCount
+            If dFiles.fWide = 0 Then   ' ANSI text, use API to get file name
+               lLen = DragQueryFile(hDrop, iCount - 1, vbNullString, 0&)       ' query length
+               ListOfFiles(iCount) = String$(lLen, 0)                          ' set up buffer
+               DragQueryFile hDrop, iCount - 1, ListOfFiles(iCount), lLen + 1  ' populate buffer
+            Else
+               ' get the length of the current file & multiply by 2 because it is unicode
+               ' lstrLenW is supported in Win9x
+               lLen = lstrlenW(ByVal dFiles.pFiles) * 2
+               sFile = String$(lLen \ 2, 0)    ' build a buffer to hold the file name
+               CopyMemory ByVal StrPtr(sFile), ByVal dFiles.pFiles, lLen ' populate the buffer
+               ' move the pointer to location for next file, adding 2 because of a double null separator/delimiter btwn file names
+               dFiles.pFiles = dFiles.pFiles + lLen + 2
+               ' add our file name to the list.
+               ListOfFiles(iCount) = sFile ' this may contain unicode characters if your system supports it
+           End If
+        Next
+        
+        GetPastedFiles = iCount - 1
+        
+    End If
+    CloseClipboard
+
+End Function
+
+
+Private Sub GetDroppedFiles(oData As DataObject)
+
+    ' Caution: Editing this routine after it has been called may crash the IDE
+    ' I believe I have fixed that issue but am not 100% positive
+    
+    ' See posting by John Kleinen for more information regarding this method of calling GetData
+    ' http://www.planet-source-code.com/vb/scripts/ShowCode.asp?txtCodeId=49268&lngWId=1
+    
+    If oData.GetFormat(vbCFFiles) = False Then Exit Sub
+    
+    Dim fmtEtc As FORMATETC, pMedium As STGMEDIUM
+    Dim dFiles As DROPFILES
+    Dim Vars(0 To 1) As Variant, pVars(0 To 1) As Long, pVartypes(0 To 1) As Integer
+    Dim varRtn As Variant
+    Dim iFiles As Long, iCount As Long, hDrop As Long
+    Dim lLen As Long, sFiles() As String
+    
+    Dim IID_IDataObject As Long ' IDataObject Interface ID
+    Const IDataObjVTable_GetData As Long = 12 ' 4th vtable entry
+    Const CC_STDCALL As Long = 4&
+    Const TYMED_HGLOBAL = 1
+    Const DVASPECT_CONTENT = 1
+
+    With fmtEtc
+        .cfFormat = vbCFFiles         ' same as CF_DROP
+        .lIndex = -1                    ' want all data
+        .TYMED = TYMED_HGLOBAL        ' want global ptr to files
+        .dwAspect = DVASPECT_CONTENT  ' no rendering
+    End With
+    
+    iCount = oData.Files.Count
+
+    ' The IDataObject pointer is 16 bytes after VBs DataObject
+    CopyMemory IID_IDataObject, ByVal ObjPtr(oData) + 16, 4&
+    
+    ' Here we are going to do something very new to me and kinda cool
+    ' Since we know the objPtr of the IDataObject interface, we therefore know
+    ' the beginning of the interface's VTable
+    
+    ' So, if we know the VTable address and we know which function index we want
+    ' to call, we can call it directly using the following OLE API. Otherwise we
+    ' would need to use a TLB to define the IDataObject interface since VB doesn't
+    ' 't expose it. This has some really neat implications if you think about it.
+    ' The IDataObject function we want is GetData which is the 4th function in
+    ' the VTable... http://msdn2.microsoft.com/en-us/library/ms688421.aspx
+    
+    pVartypes(0) = vbLong: Vars(0) = VarPtr(fmtEtc): pVars(0) = VarPtr(Vars(0))
+    pVartypes(1) = vbLong: Vars(1) = VarPtr(pMedium): pVars(1) = VarPtr(Vars(1))
+    
+    ' The variants are required by the OLE API: http://msdn2.microsoft.com/en-us/library/ms221473.aspx
+    If DispCallFunc(IID_IDataObject, IDataObjVTable_GetData, CC_STDCALL, _
+                        vbLong, 2, pVartypes(0), pVars(0), varRtn) = 0 Then
+        
+        If pMedium.Data = 0 Then
+            Exit Sub    ' nothing to do
+        Else
+            ' we have a pointer to the files, kinda sorta
+            CopyMemory hDrop, ByVal pMedium.Data, 4&
+            If Not hDrop = 0 Then
+                ' the hDrop is a pointer to a DROPFILES structure
+                ' copy the 20-byte structure for our use
+                CopyMemory dFiles, ByVal hDrop, 20&
+            End If
+        End If
+        
+        If dFiles.fWide = 0 Then ' ansi
+            GlobalFree pMedium.Data
+        
+        Else
+            ' use the pFiles member to track offsets for file names
+            dFiles.pFiles = dFiles.pFiles + hDrop
+            ReDim sFiles(1 To oData.Files.Count)
+        
+            For iCount = 1 To iCount
+                ' get the length of the current file & multiply by 2 because it is unicode
+                ' lstrLenW is supported in Win9x
+                lLen = lstrlenW(ByVal dFiles.pFiles) * 2
+                sFiles(iCount) = String$(lLen \ 2, 0)    ' build a buffer to hold the file name
+                CopyMemory ByVal StrPtr(sFiles(iCount)), ByVal dFiles.pFiles, lLen ' populate the buffer
+                ' move the pointer to location for next file, adding 2 because of a double null separator/delimiter btwn file names
+                dFiles.pFiles = dFiles.pFiles + lLen + 2
+            Next
+            
+            GlobalFree pMedium.Data
+            oData.Files.Clear
+            For iCount = 1 To iCount - 1
+                oData.Files.Add sFiles(iCount), iCount
+            Next
+            
+        End If
+
+    End If
+    
+End Sub
+
+
